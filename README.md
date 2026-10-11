@@ -215,8 +215,8 @@ Ensure you have the following installed:
 ### 1. Clone Repository
 
 ```bash
-git clone <YOUR_GITHUB_REPO_URL>
-cd cortex-ai-work-space
+git clone https://github.com/RasalaPraneeth2006/cortex-ai-workspace.git
+cd cortex-ai-workspace
 ```
 
 ---
