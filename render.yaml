@@ -1,0 +1,47 @@
+services:
+  # 1. React Frontend (Static Site)
+  - type: web
+    name: cortex-ai-workspace
+    runtime: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: .output/public
+    pullRequestPreviewsEnabled: true
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Cache-Control
+        value: no-cache
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: VITE_PYTHON_API_URL
+        sync: false # Set this to the backend Web Service URL (e.g. https://cortex-ai-backend.onrender.com)
+
+  # 2. Python FastAPI Backend (Web Service)
+  - type: web
+    name: cortex-ai-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: LOVABLE_API_KEY
+        sync: false
+      - key: ALLOWED_ORIGINS
+        value: https://cortex-ai-workspace.onrender.com
