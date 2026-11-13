@@ -61,6 +61,9 @@ export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server
     );
 
     const { data, error } = await supabase.auth.getClaims(token);
+    if (!process.env.CORTEX_OPERATOR_ID || data?.claims?.sub !== process.env.CORTEX_OPERATOR_ID) {
+      throw new Response("Operator access required", { status: 403 });
+    }
     if (error || !data?.claims) {
       throw new Response('Unauthorized: Invalid token', { status: 401 });
     }

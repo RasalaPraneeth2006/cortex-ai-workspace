@@ -608,6 +608,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           gh_owner: string | null
+          gh_blob_sha: string | null
           gh_ref: string | null
           gh_repo: string | null
           id: string
@@ -622,6 +623,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           gh_owner?: string | null
+          gh_blob_sha?: string | null
           gh_ref?: string | null
           gh_repo?: string | null
           id?: string
@@ -636,6 +638,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           gh_owner?: string | null
+          gh_blob_sha?: string | null
           gh_ref?: string | null
           gh_repo?: string | null
           id?: string

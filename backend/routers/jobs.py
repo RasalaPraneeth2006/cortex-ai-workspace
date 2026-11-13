@@ -177,7 +177,7 @@ async def enqueue_job(body: EnqueueRequest, user: AuthUser) -> dict:
 async def get_job(job_id: str, _user: AuthUser) -> dict:
     """Fetch a job row by ID."""
     supabase = get_supabase()
-    res = supabase.table("jobs").select("*").eq("id", job_id).maybe_single().execute()
+    res = supabase.table("jobs").select("*").eq("id", job_id).eq("user_id", _user["user_id"]).maybe_single().execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Job not found")
     return res.data

@@ -278,6 +278,7 @@ export const commitFiles = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => CommitInput.parse(data))
   .handler(async ({ data }): Promise<CommitResult> => {
+    throw new Error("Use the authenticated Python commit endpoint.");
     const headers = await ghHeaders(data.owner);
     if (!headers.Authorization) {
       throw new Error("No GitHub App installation found for this owner. Install the Cortex GitHub App with write access from /access.");

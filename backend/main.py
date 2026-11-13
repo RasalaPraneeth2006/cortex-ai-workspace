@@ -25,6 +25,10 @@ from routers import ai, github, jobs, rag, stats
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    required = ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "ALLOWED_ORIGINS", "CORTEX_OPERATOR_ID")
+    missing = [key for key in required if not os.environ.get(key)]
+    if missing:
+        raise RuntimeError("Missing configuration: " + ", ".join(missing))
     print("[startup] CortexAI Python backend starting...")
     yield
     print("[shutdown] CortexAI Python backend shutting down.")

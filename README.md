@@ -1,5 +1,7 @@
 # CortexAI — AI-Powered Developer Workspace & Intelligence Engine
 
+> Deployment status: operator-only preview. Follow [the deployment guide](docs/deployment.md) for current setup, environment variables, and known limits.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![React](https://img.shields.io/badge/React-19-blue.svg)](https://react.dev/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com/)
@@ -45,7 +47,7 @@ Developers often juggle fragmented tools to understand complex codebases, query 
 ## ✨ Key Features & Highlights
 
 - 🤖 **Context-Grounded AI Co-Pilot**: Multi-turn dialogue powered by Lovable AI Gateway with code context awareness and token-efficient caching.
-- 📚 **RAG Repository Indexing & Vector Search**: Automatic repository chunking stored in PostgreSQL with hybrid vector & full-text keyword retrieval.
+- 📚 **RAG Repository Indexing & Vector Search**: Automatic repository chunking stored in PostgreSQL with PostgreSQL full-text keyword retrieval.
 - 💻 **In-Browser Monaco Editor**: Visual Studio Code-like editing experience with syntax highlighting, live diffs, and direct GitHub branch committing.
 - 🗂️ **Interactive Repository Navigator**: Dynamic file tree exploration, syntax-highlighted code viewer, and one-click AI explanations for any file.
 - 👥 **Team Workspaces & Channels**: Real-time team messaging channels with membership management and collaborative chat.
@@ -205,7 +207,7 @@ cortex-ai-work-space/
 ### Prerequisites
 
 Ensure you have the following installed:
-- **Node.js**: `v18.0.0` or higher (Node 20+ recommended) or **Bun**: `v1.1+`
+- **Node.js**: `v22.12.0` or higher (Node 22 recommended) or **Bun**: `v1.1+`
 - **Python**: `v3.10` or higher (Python 3.12 recommended)
 - **Git**
 - A **Supabase** account and project
@@ -225,7 +227,7 @@ cd cortex-ai-workspace
 
 1. **Install dependencies:**
    ```bash
-   npm install
+   npm ci
    ```
 
 2. **Configure environment variables:**
@@ -303,6 +305,8 @@ cd cortex-ai-workspace
 Run the migrations in `supabase/migrations/` in chronological order against your Supabase project using the Supabase CLI or SQL Editor:
 
 ```bash
+supabase login
+supabase link --project-ref <your-project-ref>
 supabase db push
 ```
 
@@ -328,7 +332,7 @@ When the FastAPI server is running, explore interactive Swagger documentation at
 | **RAG** | `/rag/chat` | `POST` | Context-grounded Q&A with source references |
 | **Stats** | `/stats/dashboard` | `GET` | System metrics, active repos, and cached item counts |
 | **Reports** | `/stats/report` | `POST` | Generate downloadable architectural summary reports |
-| **Jobs** | `/jobs` | `GET` / `POST` | Asynchronous task queue status and submission |
+| **Jobs** | `/jobs/enqueue`, `/jobs/{id}` | `POST` / `GET` | Request-bound job execution; see deployment guide |
 
 ---
 
@@ -336,8 +340,8 @@ When the FastAPI server is running, explore interactive Swagger documentation at
 
 ### Deploy to Render
 
-This repository includes a production-ready `render.yaml` blueprint defining:
-1. **Frontend Static Site**: Built with `npm run build`, published from `.output/public`.
+This repository includes a `render.yaml` blueprint defining:
+1. **TanStack Node Web Service**: Built with `npm run build`, started with `npm start`.
 2. **Backend Web Service**: Python FastAPI server launched via Uvicorn.
 
 To deploy:

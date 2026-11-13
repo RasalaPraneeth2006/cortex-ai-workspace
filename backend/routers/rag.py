@@ -49,6 +49,8 @@ def _lang_of(path: str) -> str:
 
 def _is_indexable(path: str, size: int | None = None) -> bool:
     parts = path.split("/")
+    if any(part == ".env" or part.startswith(".env.") for part in parts):
+        return False
     if any(p in SKIP_DIR for p in parts):
         return False
     if size is not None and size > MAX_FILE_BYTES:
@@ -97,6 +99,9 @@ async def index_repo(body: IndexRequest, _user: AuthUser) -> dict:
     meta = await fetch_repo(RepoRequest(owner=body.owner, repo=body.repo, ref=body.ref), _user)
     ref = meta["defaultBranch"]
 
+    if meta.get("lazy") or meta.get("truncated"):
+        raise HTTPException(422, "Repository tree is incomplete; indexing requires a complete tree")
+
     candidates = [
         t for t in meta.get("tree", [])
         if t.get("type") == "blob" and _is_indexable(t.get("path", ""), t.get("size"))
@@ -140,8 +145,8 @@ async def index_repo(body: IndexRequest, _user: AuthUser) -> dict:
                 res = supabase.table("repo_chunks").insert(rows).execute()
                 if not getattr(res, "error", None):
                     chunks_written += len(rows)
-        except Exception:
-            pass
+        except Exception as exc:
+            raise HTTPException(502, "Indexing failed; partial index may exist") from exc
 
         done += 1
         if done % 10 == 0 or done == len(candidates):

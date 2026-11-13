@@ -64,6 +64,7 @@ type WFile = {
   gh_owner: string | null;
   gh_repo: string | null;
   gh_ref: string | null;
+  gh_blob_sha: string | null;
   created_by: string | null;
   updated_by: string | null;
   updated_at: string;
@@ -334,16 +335,17 @@ function EditorPage() {
     const { owner, repo, ref, path } = importVal;
     if (!owner || !repo || !path) { toast.error("Owner, repo and path are required"); return; }
     try {
-      const r = await pythonApi.github.fetchFile({ owner, repo, ref: ref || "main", path });
+      const r = await pythonApi.github.editFile({ owner, repo, ref: ref || "main", path });
+      if (r.truncated) throw new Error("File is too large to edit safely; use a local editor.");
       const localPath = `${owner}-${repo}/${path}`;
       // upsert
       const { data: existing } = await supabase.from("workspace_files").select("id").eq("path", localPath).maybeSingle();
       if (existing) {
-        await supabase.from("workspace_files").update({ content: r.content, updated_by: user.id }).eq("id", existing.id);
+        await supabase.from("workspace_files").update({ content: r.content, gh_blob_sha: r.sha, gh_ref: ref || "main", updated_by: user.id }).eq("id", existing.id);
       } else {
         await supabase.from("workspace_files").insert({
           path: localPath, language: detectLang(localPath), content: r.content, source: "github",
-          gh_owner: owner, gh_repo: repo, gh_ref: ref || "main",
+          gh_owner: owner, gh_repo: repo, gh_ref: ref || "main", gh_blob_sha: r.sha,
           created_by: user.id, updated_by: user.id,
         });
       }
@@ -391,11 +393,12 @@ function EditorPage() {
     if (!commitBranch.trim()) { toast.error("Branch is required"); return; }
     const chosen = currentCommitGroup.files.filter((f) => commitSelected[f.id]);
     if (chosen.length === 0) { toast.error("Select at least one file"); return; }
+    if (chosen.some((f) => !f.gh_blob_sha)) { toast.error("Re-import legacy files before committing"); return; }
     const prefix = `${currentCommitGroup.owner}-${currentCommitGroup.repo}/`;
     const payload = chosen.map((f) => {
       const content = dirty[f.id] ?? f.content;
       const repoPath = f.path.startsWith(prefix) ? f.path.slice(prefix.length) : f.path;
-      return { path: repoPath, content };
+      return { path: repoPath, content, expectedSha: f.gh_blob_sha ?? "" };
     });
     setCommitBusy(true);
     try {
@@ -412,6 +415,7 @@ function EditorPage() {
       toast.success(`Pushed ${chosen.length} file${chosen.length > 1 ? "s" : ""} to ${currentCommitGroup.owner}/${currentCommitGroup.repo}@${commitBranch}`, {
         action: { label: "View", onClick: () => window.open(r.url, "_blank") },
       });
+      await Promise.all(chosen.map((f) => supabase.from("workspace_files").update({ gh_blob_sha: null }).eq("id", f.id)));
       setCommitOpen(false);
     } catch (e) {
       toast.error((e as Error).message);
@@ -945,7 +949,8 @@ function EditorPage() {
               <ScrollArea className="h-48 rounded border border-border">
                 <div className="p-2 space-y-1">
                   {currentCommitGroup?.files.map((f) => {
-                    const prefix = `${currentCommitGroup.owner}-${currentCommitGroup.repo}/`;
+
+    const prefix = `${currentCommitGroup.owner}-${currentCommitGroup.repo}/`;
                     const repoPath = f.path.startsWith(prefix) ? f.path.slice(prefix.length) : f.path;
                     const isDirty = dirty[f.id] !== undefined;
                     return (
