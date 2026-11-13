@@ -1,60 +1,24 @@
-"""
-Auth middleware — verifies Supabase JWT tokens from the Authorization header.
-Mirrors the requireSupabaseAuth middleware from the TypeScript project.
-"""
+"""Validate sessions with Supabase Auth; supports legacy and asymmetric keys."""
 import os
 from typing import Annotated
-
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
+from lib.supabase import get_supabase
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
-
-def _get_jwt_secret() -> str:
-    secret = os.environ.get("SUPABASE_JWT_SECRET", "")
-    if not secret:
-        raise RuntimeError("SUPABASE_JWT_SECRET must be set in environment.")
-    return secret
-
-
-def get_current_user(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
-) -> dict:
-    """
-    Dependency that validates the Supabase JWT and returns the decoded payload.
-    Raises HTTP 401 if the token is missing or invalid.
-    """
+def get_current_user(credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)]) -> dict:
     if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing Authorization header",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    token = credentials.credentials
+        raise HTTPException(401, "Missing Authorization header")
     try:
-        secret = _get_jwt_secret()
-        payload = jwt.decode(
-            token,
-            secret,
-            algorithms=["HS256"],
-            options={"verify_aud": False},
-        )
-        user_id: str | None = payload.get("sub")
-        if not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: missing subject",
-            )
-        return {"user_id": user_id, "payload": payload}
-    except JWTError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid or expired token: {exc}",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+        user = get_supabase().auth.get_user(credentials.credentials).user
+    except Exception:
+        raise HTTPException(401, "Invalid or expired session")
+    if not user:
+        raise HTTPException(401, "Invalid session")
+    operator = os.environ.get("CORTEX_OPERATOR_ID")
+    if not operator or str(user.id) != operator:
+        raise HTTPException(403, "API access is restricted to the configured operator")
+    return {"user_id": str(user.id)}
 
-
-# Convenient type alias for route dependencies
 AuthUser = Annotated[dict, Depends(get_current_user)]

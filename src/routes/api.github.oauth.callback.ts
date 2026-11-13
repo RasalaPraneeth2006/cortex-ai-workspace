@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { getCookie, deleteCookie } from "@tanstack/react-start/server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -35,7 +36,11 @@ export const Route = createFileRoute("/api/github/oauth/callback")({
           return htmlError("OAuth state mismatch. Please restart the connection from /access.");
         }
         // state format: <userId>.<nonce>
-        const userId = state.split(".")[0];
+        const [userId, nonce, timestamp, signature] = state.split(".");
+        const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        if (!secret || !signature || !timestamp || userId !== process.env.CORTEX_OPERATOR_ID) return htmlError("Invalid state");
+        const expected = createHmac("sha256", secret).update(`${userId}.${nonce}.${timestamp}`).digest("hex");
+        if (signature.length !== expected.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected)) || !Number.isFinite(Number(timestamp)) || Date.now() - Number(timestamp) > 600000 || Number(timestamp) > Date.now()) return htmlError("Expired or invalid state");
         if (!userId || userId.length < 20) return htmlError("Invalid state.");
         deleteCookie(STATE_COOKIE);
 

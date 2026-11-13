@@ -169,6 +169,7 @@ const ai = {
 // ── GitHub ────────────────────────────────────────────────────────────────────
 
 const github = {
+  editFile: (body: { owner: string; repo: string; ref: string; path: string }): Promise<{content: string; sha: string; truncated: boolean}> => post("/github/edit-file", body),
   /** Fetch repo metadata + file tree. */
   fetchRepo: (body: {
     owner: string;
@@ -201,7 +202,7 @@ const github = {
     repo: string;
     branch: string;
     message: string;
-    files: Array<{ path: string; content: string }>;
+    files: Array<{ path: string; content: string; expectedSha: string }>;
     authorName?: string;
     authorEmail?: string;
   }): Promise<{ commitSha: string; branch: string; url: string }> =>

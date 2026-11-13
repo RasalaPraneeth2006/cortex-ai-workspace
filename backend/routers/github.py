@@ -252,6 +252,7 @@ async def fetch_file(body: FileRequest, _user: AuthUser) -> dict:
 # ── /github/commit ────────────────────────────────────────────────────────────
 
 class CommitFile(BaseModel):
+    expectedSha: str = Field(pattern=r"^[0-9a-f]{40}$")
     path: str = Field(min_length=1, max_length=500)
     content: str = Field(max_length=1_000_000)
 
@@ -303,13 +304,33 @@ async def commit_files(body: CommitRequest, _user: AuthUser) -> dict:
             raise HTTPException(status_code=502, detail=f"Failed to read base commit ({commit_res.status_code})")
         base_tree_sha = commit_res.json()["tree"]["sha"]
 
+        # Validate every source revision before creating any objects.
+        modes = {}
+        seen = set()
+        for f in body.files:
+            if f.path in seen or any(part in ("", ".", "..") for part in f.path.split("/")):
+                raise HTTPException(422, "Invalid or duplicate file path")
+            seen.add(f.path)
+            current = await gh_fetch(f"{base}/contents/{quote(f.path, safe='/')}?ref={base_commit_sha}", headers, client)
+            if not current.is_success or current.json().get("sha") != f.expectedSha:
+                raise HTTPException(409, f"{f.path} changed; re-import and review your edits")
+            parent, _, name = f.path.rpartition("/")
+            tree_ref = f"{base_commit_sha}:{parent}" if parent else base_tree_sha
+            tree = await gh_fetch(f"{base}/git/trees/{quote(tree_ref, safe='')}", headers, client)
+            if not tree.is_success:
+                raise HTTPException(502, "Cannot verify file mode")
+            entry = next((x for x in tree.json().get("tree", []) if x["path"] == name), None)
+            if not entry or entry.get("mode") not in ("100644", "100755"):
+                raise HTTPException(422, "Only regular text files can be edited")
+            modes[f.path] = entry["mode"]
+
         # 3. Create blobs
         tree_items = []
         for f in body.files:
             blob_res = await gh_post(f"{base}/git/blobs", json_headers, {"content": f.content, "encoding": "utf-8"}, client)
             if not blob_res.is_success:
                 raise HTTPException(status_code=502, detail=f"Failed to create blob for {f.path} ({blob_res.status_code}): {blob_res.text[:200]}")
-            tree_items.append({"path": f.path, "mode": "100644", "type": "blob", "sha": blob_res.json()["sha"]})
+            tree_items.append({"path": f.path, "mode": modes[f.path], "type": "blob", "sha": blob_res.json()["sha"]})
 
         # 4. Create new tree
         tree_res = await gh_post(f"{base}/git/trees", json_headers, {"base_tree": base_tree_sha, "tree": tree_items}, client)
@@ -334,6 +355,11 @@ async def commit_files(body: CommitRequest, _user: AuthUser) -> dict:
         if not upd_res.is_success:
             raise HTTPException(status_code=502, detail=f"Failed to push ({upd_res.status_code}): {upd_res.text[:200]}")
 
+    # Repository trees and indexed content no longer represent this branch.
+    db = get_supabase()
+    db.table("gh_repo_cache").delete().eq("owner", body.owner).eq("repo", body.repo).execute()
+    db.table("repo_chunks").delete().eq("owner", body.owner).eq("repo", body.repo).eq("ref", body.branch).execute()
+
     # 7. Invalidate file cache
     try:
         ids = [f"{body.owner}/{body.repo}@{body.branch}:{f.path}" for f in body.files]
@@ -346,3 +372,24 @@ async def commit_files(body: CommitRequest, _user: AuthUser) -> dict:
         "branch": body.branch,
         "url": f"https://github.com/{body.owner}/{body.repo}/commit/{new_commit_sha}",
     }
+
+
+@router.post("/edit-file")
+async def edit_file(body: FileRequest, _user: AuthUser) -> dict:
+    """Read complete editor content and its revision, bypassing display caches."""
+    import base64
+    headers = await gh_headers(body.owner)
+    async with httpx.AsyncClient(timeout=30) as client:
+        res = await gh_fetch(f"https://api.github.com/repos/{body.owner}/{body.repo}/contents/{quote(body.path, safe='/')}?ref={quote(body.ref, safe='')}", headers, client)
+    if not res.is_success:
+        raise HTTPException(502, "Cannot read editor source")
+    data = res.json()
+    if not isinstance(data, dict) or data.get("type") != "file" or data.get("encoding") != "base64" or data.get("size", 0) > 80000:
+        raise HTTPException(422, "Only complete UTF-8 text files up to 80 KB can be edited")
+    try:
+        content = base64.b64decode(data["content"]).decode("utf-8")
+        if "\x00" in content:
+            raise ValueError("binary")
+    except (ValueError, UnicodeError):
+        raise HTTPException(422, "Binary files cannot be edited")
+    return {"content": content, "sha": data["sha"], "truncated": False}

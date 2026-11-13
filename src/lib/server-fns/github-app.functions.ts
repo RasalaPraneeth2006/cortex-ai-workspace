@@ -1,5 +1,6 @@
+import { createHmac } from "node:crypto";
 import { createServerFn } from "@tanstack/react-start";
-import { getRequestHost, setCookie } from "@tanstack/react-start/server";
+import { setCookie } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -7,9 +8,9 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 const STATE_COOKIE = "gh_app_oauth_state";
 
 function originFromRequest(): string {
-  const host = getRequestHost();
-  // Lovable preview/published are both HTTPS
-  return `https://${host}`;
+  const origin = process.env.APP_ORIGIN;
+  if (!origin) throw new Error("APP_ORIGIN is required");
+  return new URL(origin).origin;
 }
 
 /** Returns the GitHub authorize URL and sets a signed state cookie. */
@@ -21,10 +22,12 @@ export const startGithubOAuth = createServerFn({ method: "POST" })
     const origin = originFromRequest();
     const redirectUri = `${origin}/api/github/oauth/callback`;
     const nonce = crypto.randomUUID().replace(/-/g, "");
-    const state = `${context.userId}.${nonce}`;
+    const payload = `${context.userId}.${nonce}.${Date.now()}`;
+    const signature = createHmac("sha256", process.env.SUPABASE_SERVICE_ROLE_KEY!).update(payload).digest("hex");
+    const state = `${payload}.${signature}`;
     setCookie(STATE_COOKIE, state, {
       httpOnly: true,
-      secure: true,
+      secure: originFromRequest().startsWith("https://"),
       sameSite: "lax",
       path: "/",
       maxAge: 60 * 10,
@@ -43,10 +46,12 @@ export const getInstallUrl = createServerFn({ method: "POST" })
     const { getAppSlug } = await import("@/integrations/github/installation-token.server");
     const slug = await getAppSlug();
     const nonce = crypto.randomUUID().replace(/-/g, "");
-    const state = `${context.userId}.${nonce}`;
+    const payload = `${context.userId}.${nonce}.${Date.now()}`;
+    const signature = createHmac("sha256", process.env.SUPABASE_SERVICE_ROLE_KEY!).update(payload).digest("hex");
+    const state = `${payload}.${signature}`;
     setCookie(STATE_COOKIE, state, {
       httpOnly: true,
-      secure: true,
+      secure: originFromRequest().startsWith("https://"),
       sameSite: "lax",
       path: "/",
       maxAge: 60 * 10,
